@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 from enum import Enum, auto as auto_value
 from .encoder_model import HuggingfaceEncoderModel
 from .generative_model import HuggingfaceGenerativeModel
@@ -26,6 +27,21 @@ class Backend(str, Enum):
     auto = auto_value()
     huggingface = auto_value()
     vllm = auto_value()
+
+
+def parse_backend(value: str) -> Backend:
+    """Convert a --backend command line value to a Backend.
+
+    Raises argparse.ArgumentTypeError for unknown names so that argparse
+    prints a usage error instead of a KeyError traceback.
+    """
+    try:
+        return Backend[value]
+    except KeyError:
+        valid = ", ".join(f"'{b.name}'" for b in Backend)
+        raise argparse.ArgumentTypeError(
+            f"invalid backend '{value}', must be one of {valid}"
+        ) from None
 
 
 __all__ = [

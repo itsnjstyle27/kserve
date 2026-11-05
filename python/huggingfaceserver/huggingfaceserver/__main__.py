@@ -37,6 +37,7 @@ from . import (
     HuggingfaceEncoderModel,
     HuggingFaceTimeSeriesModel,
     Backend,
+    parse_backend,
 )
 
 from .vllm.utils import (
@@ -134,7 +135,7 @@ available_backends = ", ".join(f"'{b.name}'" for b in Backend)
 parser.add_argument(
     "--backend",
     default="auto",
-    type=lambda t: Backend[t],
+    type=parse_backend,
     help=f"the backend to use to load the model. Can be one of {available_backends}",
 )
 parser.add_argument(
