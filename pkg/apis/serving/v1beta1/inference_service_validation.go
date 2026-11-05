@@ -820,11 +820,6 @@ func validateMultipleStorageURIsSpec(storageUris []StorageUri) error {
 		}
 	}
 
-	// If only one storage URI, no need to check common parent
-	if len(paths) <= 1 {
-		return nil
-	}
-
 	// Check that PVC paths are unique
 	if len(pvcPaths) > 1 {
 		pvcPathSet := make(map[string]bool)
@@ -834,6 +829,11 @@ func validateMultipleStorageURIsSpec(storageUris []StorageUri) error {
 			}
 			pvcPathSet[path] = true
 		}
+	}
+
+	// If only one non-PVC storage URI, no need to check common parent
+	if len(paths) <= 1 {
+		return nil
 	}
 
 	// Validate that paths have a common parent path
