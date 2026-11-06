@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gzip
 import io
 import json
 import os
@@ -568,6 +569,25 @@ def test_http_uri_paths(uri, response, expected_error):
                 assert os.path.exists(os.path.join(out_dir, "model.pth"))
 
     mock.patch("requests.Session.get", return_value=response)(test)()
+
+
+@pytest.mark.parametrize(
+    "uri,expected_name",
+    [
+        ("https://foo.bar/model.pkl.gz", "model.pkl"),
+        ("https://foo.bar/model.pkl.gz?foo=bar", "model.pkl"),
+        ("https://foo.bar/model.gz", "model"),
+    ],
+)
+def test_http_gzip_file_that_is_not_a_tar(uri, expected_name):
+    content = b"not an archive"
+    response = MockHttpResponse(200, gzip.compress(content), "application/octet-stream")
+
+    with mock.patch("requests.Session.get", return_value=response):
+        with tempfile.TemporaryDirectory() as out_dir:
+            assert Storage.download(uri, out_dir=out_dir) == out_dir
+            assert os.listdir(out_dir) == [expected_name]
+            assert Path(out_dir, expected_name).read_bytes() == content
 
 
 def test_storage_blob_exception():

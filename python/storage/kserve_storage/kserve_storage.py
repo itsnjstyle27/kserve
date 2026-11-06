@@ -1935,7 +1935,7 @@ class Storage(object):
         url = urlparse(uri)
         filename = os.path.basename(url.path)
         # Determine if the symbol '?' exists in the path
-        if mimetypes.guess_type(url.path)[0] is None and url.query != "":
+        if mimetypes.guess_type(url.path) == (None, None) and url.query != "":
             mimetype, encoding = mimetypes.guess_type(url.query)
         else:
             mimetype, encoding = mimetypes.guess_type(url.path)
@@ -2032,7 +2032,11 @@ class Storage(object):
 
             if encoding == "gzip":
                 stream = gzip.GzipFile(fileobj=response.raw)
-                local_path = os.path.join(out_dir, f"{filename}.tar")
+                if mimetype == "application/x-tar":
+                    local_path = os.path.join(out_dir, f"{filename}.tar")
+                else:
+                    # model.pkl.gz is saved decompressed, so it's model.pkl.
+                    local_path = os.path.join(out_dir, os.path.splitext(filename)[0])
             else:
                 stream = response.raw
             with open(local_path, "wb") as out:
