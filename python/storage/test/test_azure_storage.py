@@ -253,6 +253,53 @@ def test_blob_fq_file(mock_storage, mock_makedirs):  # pylint: disable=unused-ar
     assert actual_calls == expected_calls
 
 
+@pytest.mark.parametrize(
+    "uri,expected",
+    [
+        (
+            "https://accountname.blob.core.windows.net/container",
+            ("container", ""),
+        ),
+        (
+            "https://accountname.blob.core.windows.net/container/",
+            ("container", ""),
+        ),
+        (
+            "https://accountname.blob.core.windows.net/container/some/path/",
+            ("container", "some/path"),
+        ),
+        (
+            "https://accountname.file.core.windows.net/share",
+            ("share", ""),
+        ),
+    ],
+)
+def test_parse_azure_uri(uri, expected):
+    _, _, object_name, prefix = Storage._parse_azure_uri(uri)
+    assert (object_name, prefix) == expected
+
+
+def test_parse_azure_uri_without_container():
+    with pytest.raises(ValueError, match="container or file share"):
+        Storage._parse_azure_uri("https://accountname.blob.core.windows.net/")
+
+
+@mock.patch(STORAGE_MODULE + ".os.makedirs")
+@mock.patch("azure.storage.blob.aio.BlobServiceClient")
+def test_blob_container_without_trailing_slash(mock_storage, mock_makedirs):  # pylint: disable=unused-argument
+    # given
+    blob_path = "https://accountname.blob.core.windows.net/container"
+    paths = ["somefile.text", "somefolder/somefile.text"]
+
+    # when
+    mock_blob, mock_container = create_mock_blob(mock_storage, paths)
+    Storage._download_azure_blob(blob_path, "some/dest/path")
+
+    # then
+    actual_calls = get_call_args(mock_container.get_blob_client.call_args_list)
+    assert set(actual_calls) == {(p,) for p in paths}
+
+
 @mock.patch(STORAGE_MODULE + ".os.makedirs")
 @mock.patch("azure.storage.blob.aio.BlobServiceClient")
 def test_blob_no_prefix(mock_storage, mock_makedirs):  # pylint: disable=unused-argument

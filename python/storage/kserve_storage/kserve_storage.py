@@ -1636,7 +1636,10 @@ class Storage(object):
         account_url = "https://{}{}".format(
             parsed.netloc, "?" + parsed.query if parsed.query else ""
         )
-        object_name, prefix = parsed.path.lstrip("/").split("/", 1)
+        # The path may be just the container or file share, with no trailing slash.
+        object_name, _, prefix = parsed.path.lstrip("/").partition("/")
+        if not object_name:
+            raise ValueError(f"URI {uri} does not name a container or file share")
         prefix = prefix.strip("/")
         return account_name, account_url, object_name, prefix
 
