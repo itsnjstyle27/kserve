@@ -266,8 +266,10 @@ func routeStep(nodeName string, graph v1alpha1.InferenceGraphSpec, input []byte,
 		return handleSplitterORSwitchNode(route, graph, input, headers)
 	}
 	if currentNode.RouterType == v1alpha1.Ensemble {
+		// The channels are buffered so that every step can finish, even when the merge
+		// below returns early and nothing reads its result.
 		ensembleRes := make([]chan EnsembleStepOutput, len(currentNode.Steps))
-		errChan := make(chan error)
+		errChan := make(chan error, len(currentNode.Steps))
 		for i := range currentNode.Steps {
 			step := &currentNode.Steps[i]
 			stepType := "serviceUrl"
@@ -275,7 +277,7 @@ func routeStep(nodeName string, graph v1alpha1.InferenceGraphSpec, input []byte,
 				stepType = "node"
 			}
 			log.Info("Starting execution of step", "type", stepType, "stepName", step.StepName)
-			resultChan := make(chan EnsembleStepOutput)
+			resultChan := make(chan EnsembleStepOutput, 1)
 			ensembleRes[i] = resultChan
 			go func() {
 				output, statusCode, err := executeStep(step, graph, input, headers)

@@ -27,7 +27,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -252,6 +254,100 @@ func TestSimpleModelEnsemble(t *testing.T) {
 	}
 	t.Logf("final response:%v", response)
 	assert.Equal(t, expectedResponse, response)
+}
+
+// ensembleGoroutines counts the goroutines started by routeStep for ensemble steps.
+func ensembleGoroutines() int {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	return strings.Count(string(buf), "routeStep.func")
+}
+
+// When a hard dependency fails, routeStep returns before reading the results of the
+// other steps. Those steps must still be able to finish.
+func TestEnsembleEarlyReturnDoesNotLeakGoroutines(t *testing.T) {
+	failing := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = rw.Write([]byte(`{"error": "unavailable"}`))
+	}))
+	defer failing.Close()
+
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		<-release
+		_, _ = rw.Write([]byte(`{"predictions": "slow"}`))
+	}))
+	defer slow.Close()
+
+	graphSpec := v1alpha1.InferenceGraphSpec{
+		Nodes: map[string]v1alpha1.InferenceRouter{
+			"root": {
+				RouterType: v1alpha1.Ensemble,
+				Steps: []v1alpha1.InferenceStep{
+					{
+						StepName:   "failing",
+						Dependency: v1alpha1.Hard,
+						InferenceTarget: v1alpha1.InferenceTarget{
+							ServiceURL: failing.URL,
+						},
+					},
+					{
+						StepName: "slow",
+						InferenceTarget: v1alpha1.InferenceTarget{
+							ServiceURL: slow.URL,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	before := ensembleGoroutines()
+	const requests = 5
+	for i := 0; i < requests; i++ {
+		_, statusCode, err := routeStep("root", graphSpec, []byte(`{"instances": []}`), http.Header{})
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusServiceUnavailable, statusCode)
+	}
+
+	close(release)
+	assert.Eventually(t, func() bool {
+		return ensembleGoroutines() <= before
+	}, 5*time.Second, 50*time.Millisecond, "the steps that were still running never finished")
+}
+
+// A step that fails after another step already failed has no reader either.
+func TestEnsembleSecondErrorDoesNotLeakGoroutines(t *testing.T) {
+	graphSpec := v1alpha1.InferenceGraphSpec{
+		Nodes: map[string]v1alpha1.InferenceRouter{
+			"root": {
+				RouterType: v1alpha1.Ensemble,
+				Steps: []v1alpha1.InferenceStep{
+					{
+						StepName: "unreachable1",
+						InferenceTarget: v1alpha1.InferenceTarget{
+							ServiceURL: "http://127.0.0.1:1",
+						},
+					},
+					{
+						StepName: "unreachable2",
+						InferenceTarget: v1alpha1.InferenceTarget{
+							ServiceURL: "http://127.0.0.1:1",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	before := ensembleGoroutines()
+	_, statusCode, err := routeStep("root", graphSpec, []byte(`{"instances": []}`), http.Header{})
+	require.Error(t, err)
+	assert.Equal(t, http.StatusInternalServerError, statusCode)
+
+	assert.Eventually(t, func() bool {
+		return ensembleGoroutines() <= before
+	}, 5*time.Second, 50*time.Millisecond, "the step that failed second never finished")
 }
 
 func TestInferenceGraphWithCondition(t *testing.T) {
