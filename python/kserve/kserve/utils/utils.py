@@ -199,6 +199,12 @@ def get_predict_input(
         ):
             dfs = []
             for instance in instances:
+                # A dict of plain values is one row. pandas needs that as a list
+                # of records, and refuses it as a dict without an index.
+                if isinstance(instance, Dict) and all(
+                    pd.api.types.is_scalar(value) for value in instance.values()
+                ):
+                    instance = [instance]
                 dfs.append(pd.DataFrame(instance, columns=columns))
             inputs = pd.concat(dfs, axis=0)
             return inputs
